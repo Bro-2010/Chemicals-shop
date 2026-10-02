@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Orders - Area Man Chemicals</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #f2f4ef;
+    color: #14201c;
+    font-family: "Trebuchet MS", "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+  }
+  header { background: #1f4e79; color: #fff; padding: 16px; border-bottom: 6px solid #e8a317; }
+  header h1 { margin: 0; font-size: 1.4rem; }
+  main { max-width: 800px; margin: 0 auto; padding: 16px; }
+  input, button, select {
+    font: inherit;
+    padding: 10px 12px;
+    border: 1px solid #d5dbd4;
+    border-radius: 6px;
+    background: #fff;
+    color: inherit;
+  }
+  button { cursor: pointer; }
+  .primary { background: #1f4e79; color: #fff; border-color: #1f4e79; font-weight: bold; }
+  .login { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .login input { flex: 1 1 200px; }
+  .order {
+    background: #fff;
+    border: 1px solid #d5dbd4;
+    border-left: 10px solid #e8a317;
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+  }
+  .order.done { border-left-color: #1f8f4e; opacity: 0.75; }
+  .order h3 { margin: 0 0 4px; }
+  .order small { color: #5d6b65; display: block; }
+  .order pre { white-space: pre-wrap; font: inherit; margin: 8px 0; }
+  .order a, .order button { display: inline-block; margin: 4px 6px 0 0; text-decoration: none; }
+  .order a { padding: 10px 12px; border: 1px solid #1f8f4e; color: #1f8f4e; border-radius: 6px; font-weight: bold; }
+  #msg { font-weight: bold; color: #c0392b; }
+  .empty { padding: 24px; text-align: center; border: 2px dashed #d5dbd4; border-radius: 6px; color: #5d6b65; }
+</style>
+</head>
+<body>
+
+<header><h1>Area Man Chemicals - Customer orders</h1></header>
+
+<main>
+  <div class="login">
+    <input type="password" id="password" placeholder="Owner password" aria-label="Owner password">
+    <button class="primary" id="loginBtn">Show orders</button>
+    <select id="show" aria-label="Which orders to show">
+      <option value="new">New orders</option>
+      <option value="all">All orders</option>
+    </select>
+  </div>
+  <p id="msg" role="status"></p>
+  <div id="orders"></div>
+</main>
+
+<script>
+  var password = "";
+  var orders = [];
+
+  function escapeHtml(text) {
+    var div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Turn 0542931782 into 233542931782 for WhatsApp
+  function waNumber(phone) {
+    var digits = String(phone).replace(/\D/g, "");
+    if (digits.indexOf("233") === 0) return digits;
+    if (digits.charAt(0) === "0") return "233" + digits.slice(1);
+    return digits;
+  }
+
+  function showOrders() {
+    var which = document.getElementById("show").value;
+    var shown = orders.filter(function (o) { return which === "all" || o.status === "new"; });
+    var box = document.getElementById("orders");
+
+    if (shown.length === 0) {
+      box.innerHTML = '<div class="empty">No orders to show.</div>';
+      return;
+    }
+
+    box.innerHTML = shown.map(function (o) {
+      var reply = "Hello " + o.name + ", this is Area Man Chemicals. We got your order.";
+      return (
+        '<article class="order ' + o.status + '">' +
+          '<h3>' + escapeHtml(o.name) + '</h3>' +
+          '<small>' + new Date(o.createdAt).toLocaleString() + ' - ' + escapeHtml(o.service) + '</small>' +
+          '<small>Phone: ' + escapeHtml(o.phone) + '</small>' +
+          (o.service === "Delivery" ? '<small>Address: ' + escapeHtml(o.address) + '</small>' : '') +
+          '<pre>' + escapeHtml(o.items) + '</pre>' +
+          (o.note ? '<small>Note: ' + escapeHtml(o.note) + '</small>' : '') +
+          '<a target="_blank" rel="noopener" href="https://wa.me/' + waNumber(o.phone) +
+            '?text=' + encodeURIComponent(reply) + '">Reply on WhatsApp</a>' +
+          '<a href="tel:' + escapeHtml(o.phone) + '">Call</a>' +
+          (o.status === "new" ? '<button data-done="' + o.id + '">Mark as done</button>' : '<small>Done</small>') +
+        '</article>'
+      );
+    }).join("");
+  }
+
+  function loadOrders() {
+    var msg = document.getElementById("msg");
+    msg.textContent = "";
+    password = document.getElementById("password").value;
+
+    fetch("/api/orders", { headers: { "x-admin-password": password } })
+      .then(function (response) {
+        return response.json().then(function (body) {
+          if (!response.ok) throw new Error(body.error || "Could not load orders.");
+          return body;
+        });
+      })
+      .then(function (list) {
+        orders = list;
+        showOrders();
+      })
+      .catch(function (error) {
+        msg.textContent = error.message;
+        document.getElementById("orders").innerHTML = "";
+      });
+  }
+
+  document.getElementById("loginBtn").addEventListener("click", loadOrders);
+  document.getElementById("password").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") loadOrders();
+  });
+  document.getElementById("show").addEventListener("change", showOrders);
+
+  document.getElementById("orders").addEventListener("click", function (event) {
+    var button = event.target.closest("button[data-done]");
+    if (!button) return;
+    fetch("/api/orders/" + button.getAttribute("data-done") + "/done", {
+      method: "POST",
+      headers: { "x-admin-password": password }
+    }).then(loadOrders);
+  });
+</script>
+</body>
+</html>
